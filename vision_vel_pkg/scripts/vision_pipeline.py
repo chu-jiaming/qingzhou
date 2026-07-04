@@ -425,9 +425,9 @@ def get_vel():
                     if flag_z == True:
                         undist_img = cv2.undistort(frame, K1, Dist1)      # 去畸变
                         img = undist_img[80:240,120:320]   #y ,x
-                        cv2.imwrite("/home/hit2/new_qingzhou_ws/src/vision_vel_pkg/scripts/word.jpg", img)
+                        cv2.imwrite("word.jpg", img)
                         time_start=time.time()
-                        path = "/home/hit2/new_qingzhou_ws/src/vision_vel_pkg/scripts/OcrLiteOnnx /home/hit2/new_qingzhou_ws/src/vision_vel_pkg/scripts/word.jpg /home/hit2/new_qingzhou_ws/src/vision_vel_pkg/scripts/ocr-lite-onnx/models 1.0 0.5 0.3 3 1.3 1.3 1.6 1.6"
+                        path = "./OcrLiteOnnx word.jpg ./ocr-lite-onnx/models 1.0 0.5 0.3 3 1.3 1.3 1.6 1.6"
                         ret = subprocess.getstatusoutput(path)
                         print(ret[1])
                         wen = ocr(ret[1])

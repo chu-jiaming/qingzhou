@@ -1,5 +1,5 @@
 <launch>
     <!-- <node pkg="qingzhou_nav" type="server" respawn="false" name="server" /> -->
-    <node pkg="vision_vel_pkg" type="dinner.py" respawn="false" name="vision" output="screen" />
+    <node pkg="vision_vel_pkg" type="lane_filtering.py" respawn="false" name="vision" output="screen" />
     <node pkg="vision_vel_pkg" type="send_tf_node.py" respawn="false" name="tf_send" />
 </launch>

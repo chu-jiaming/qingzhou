@@ -15,14 +15,14 @@
     <param name="controller_frequency" value="5.0" />
     <param name="controller_patience" value="0.2" />
 
-    <rosparam file="/home/hit2/new_qingzhou_ws/src/params/costmap_common_params.yaml" command="load" ns="global_costmap" />
-    <rosparam file="/home/hit2/new_qingzhou_ws/src/params/costmap_common_params.yaml" command="load" ns="local_costmap" />
-    <rosparam file="/home/hit2/new_qingzhou_ws/src/params/local_costmap_params.yaml" command="load" />
-    <rosparam file="/home/hit2/new_qingzhou_ws/src/params/global_costmap_params.yaml" command="load" />
-    <rosparam file="/home/hit2/new_qingzhou_ws/src/params/teb_local_planner_params.yaml" command="load" />
+    <rosparam file="$(find qingzhou_nav)/config/costmap_common_params.yaml" command="load" ns="global_costmap" />
+    <rosparam file="$(find qingzhou_nav)/config/costmap_common_params.yaml" command="load" ns="local_costmap" />
+    <rosparam file="$(find qingzhou_nav)/config/local_costmap_params.yaml" command="load" />
+    <rosparam file="$(find qingzhou_nav)/config/global_costmap_params.yaml" command="load" />
+    <rosparam file="$(find qingzhou_nav)/config/teb_local_planner_params.yaml" command="load" />
 
-    <!-- <rosparam file="$(find qingzhou_nav)/params/costmap_converter_params.yaml" command="load" /> -->
-    <rosparam file="$(find qingzhou_nav)/params/global_planner_params.yaml" command="load" />
+    <!-- <rosparam file="$(find qingzhou_nav)/config/costmap_converter_params.yaml" command="load" /> -->
+    <rosparam file="$(find qingzhou_nav)/config/global_planner_params.yaml" command="load" />
     <!-- <remap from="/odom" to="/odom_ekf"/>  -->
   </node>
   <node pkg="qingzhou_nav" type="qingzhou_nav_node" respawn="false" name="qingzhou_nav_node" output="screen"/>

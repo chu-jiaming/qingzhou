@@ -1,4 +1,4 @@
-image: /home/hit2/new_qingzhou_ws/src/qingzhou_nav/maps/test01.pgm
+image: test01.pgm
 resolution: 0.050000
 origin: [-10.000000, -10.000000, 0.000000]
 negate: 0

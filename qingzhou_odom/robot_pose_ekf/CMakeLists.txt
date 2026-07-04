@@ -72,7 +72,7 @@ install(
 )
 
 install(
-    PROGRAMS scripts/wtf.py
+    PROGRAMS scripts/ekf_status_check.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

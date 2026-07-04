@@ -24,10 +24,6 @@ K = np.array([[198.5257, 0, 153.7481],
               [0, 264.7291, 138.2082],
               [0, 0, 1.0000]], dtype=np.float32)  # 相机内参矩阵
 
-H = np.array([[-0.1669762, -0.69926321, 122.65788084],
-              [0.01309059, -0.12283827, -18.74868092],
-              [0.00000088, -0.00710999, 1.]], dtype=np.float32)
-
 Dist = np.array([-0.3468, 0.1280, 0., 0., 0.], dtype=np.float32)  # 相机畸变参数
 
 # color range
@@ -69,20 +65,20 @@ def gstreamer_pipeline(
 
 
 
+
 def warp(img):
     """
     :param img: 输入图像
     :return: 逆透视之后的图像200x200
     """
-    undist_img = cv2.undistort(img, K, Dist)  # 去畸变
-    undist_img = cv2.warpPerspective(undist_img, H, (200, 200))
+    undist_img = cv2.undistort(img, K, Dist)      # 去畸变
     return undist_img
 
 
 def get_xy(lane_x,lane_y):               #返回s弯偏移量
 
     # 多项式回归
-    lane_mid = np.polyfit(lane_x, lane_y, deg=2)
+    lane_mid = np.polyfit(lane_x, lane_y, deg=1)
     # lane_mid_function = np.poly1d(lane_mid)
     x_min = min(lane_x)
     x_max = max(lane_x)
@@ -148,8 +144,8 @@ def get_vel():
     daoche_msg = trafficlight()
     green = 0
     i = 0
-    limit = 25
-    stop = 40
+    limit = 45
+    stop = 67
     global daoche_pub
     global vel_pub  
     global trafficlight_pub
@@ -177,52 +173,80 @@ def get_vel():
 ####################################################S弯识别部分#########################################################################
 #######################################################################################################################################
                     if flag_s:
-                        print(i)    
-                        
+                        print(i)       
                         if flag_01==1:
                             flag_01=0
                             cancel_pub =  rospy.Publisher("/move_base/cancel",GoalID,queue_size=10)
                             empty_goal = GoalID()
                             cancel_pub.publish(empty_goal)
-                        frame = warp(frame)
-                        # kernel = np.array([[-1, 0, 1],
-                        #                    [-2, 0, 2],
-                        #                    [-1, 0, 1]], dtype=np.float32)
-                        # img = cv2.filter2D(frame, ddepth=cv2.CV_32F, kernel=kernel)
-                        # img = cv2.convertScaleAbs(img)
-                        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                        contours_img = cv2.Canny(gray,100,200)
-                        
-                        contours_img = cv2.dilate(contours_img,kernel,iterations=1)
-                        contours, hierarchy = cv2.findContours(contours_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-                        target_contours = []
-                        boxs = []
-                        center_x = []
-                        center_y = []
-                        for contour in contours:
-                            area = cv2.contourArea(contour)
-                            rect = cv2.minAreaRect(contour)
-                            (x, y), (w, h), t = rect
-                            if 50 < area < 190 and 0.1<w/h <10:
-                                target_contours.append(contour)
-                                center_x.append(x)
-                                center_y.append(y)
+                        img = img[170:240, 0:320]  #(50,320)
+                        pt2 = (80, 0)
+                        pt1 = (240, 0)
+                        pt3 = (0, 70)
+                        pt4 = (320, 70)
+                        # 将四个顶点坐标放入数组中
+                        pts = np.array([pt1, pt2, pt3, pt4], np.int32)
+                        # 创建一个掩膜
+                        mask = np.zeros_like(img)
+                        # 在掩膜上绘制填充的梯形
+                        cv2.fillPoly(mask, [pts], 255)
+                        img = cv2.bitwise_and(img,img,mask)
+                        frame = cv2.GaussianBlur(img,(3,3),0)
+                        #frame = cv2.bilateralFilter(img, d, sigma_color, sigma_space)
+                        kernel = np.array([[-1, -2, -1],
+                                        [0, 0, 0],
+                                        [1, 2, 1]], dtype=np.float32)
+                        img = cv2.filter2D(frame, ddepth=cv2.CV_32F, kernel=kernel)
+                        img = cv2.convertScaleAbs(img)
+                        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                        _, binary = cv2.threshold(gray, 55, 255, cv2.THRESH_BINARY)
+                        binary = cv2.dilate(binary, kernel=kernel1, iterations=1)
+                        contours, hierarchy = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)  # 寻找轮廓线
+                        target_contours = []  # 去掉大轮廓，保留车道线轮廓,list形式
+                        lane_x = []
+                        lane_y = []
+                        for index, contour in enumerate(contours):
+                            Hull = cv2.convexHull(contour, False)
+                            # 多边形逼近
+                            approx = cv2.approxPolyDP(Hull, 0.1 * cv2.arcLength(Hull, True), True)
+                            # 计算周长、面积和边界框
+                            perimeter = cv2.arcLength(approx, True)
+                            area = cv2.contourArea(approx)
+                            x, y, w, h = cv2.boundingRect(approx)
+                            if 70 > perimeter > 25 and 400 > area > 40 and 0.6 < w / h < 2.5:
+                                target_contours.append(approx)
+                                center_x = int(x + w / 2)
+                                center_y = int(y + h / 2)
+                                lane_x.append(center_x)
+                                lane_y.append(center_y)
                         if len(target_contours) > 1:
                             result = cv2.drawContours(frame.copy(), target_contours, -1, (0, 0, 255), 1)
-                            pian, xishu, x_val, y_val = get_xy(center_x,center_y)
+                            pian, xishu, x_val, y_val = get_xy(lane_x,lane_y)
                             pianyi = (pian-160)/160
                             i = 0
+                            # if xishu[0] < 0 and pianyi > 0:
+                            #     pinayi = pianyi + 0.7
+                            # if pianyi >1:
+                            #     pianyi = 1
+                            # elif pianyi <-1:
+                            #     pianyi = -1
+                            # else:
+                            #     pianyi = pianyi
                             points = []  # 获得曲线坐标
                             for index, x in enumerate(x_val):
                                 points.append([x, y_val[index]])
                             points = np.array(points, np.int32)
-                            vel_msg.angular.z = -pianyi*1.65  #上午1.60
+                            vel_msg.angular.z = -pianyi*1.62
+                            if vel_msg.angular.z < 0:
+                                vel_msg.angular.z = vel_msg.angular.z-0.15
+                            else:
+                                vel_msg.angular.z = vel_msg.angular.z
                             print(pianyi,vel_msg.angular.z)
-                            vel_msg.linear.x = 0.8
+                            vel_msg.linear.x = 1
                             vel_pub.publish(vel_msg)
                             result = cv2.polylines(result, [points], False, (0, 0, 255), 2)
                         elif len(target_contours)==1:
-                            vel_msg.linear.x = 0.8
+                            vel_msg.linear.x = 1
                             vel_pub.publish(vel_msg)
                             if i < 3:
                                 i = 0
@@ -230,14 +254,15 @@ def get_vel():
                             print('一个')
                         else:
                             if i < limit:
-                                vel_msg.angular.z = -0.6
+                                vel_msg.angular.z = -0.45
                             i = i + 1
                             vel_pub.publish(vel_msg)
                             result = frame
                         if limit < i < stop:
+                            vel_msg.linear.x = 0.5
                             vel_msg.angular.z = 0
                             vel_pub.publish(vel_msg)
-                        if  i > stop:
+                        if   i > stop:
                             flag_s = False
                             flag_z = True
                             # flag_01=1
@@ -318,9 +343,9 @@ def get_vel():
                         img_gray = cv2.cvtColor(img_word, cv2.COLOR_BGR2GRAY)
                         th = cv2.adaptiveThreshold(img_gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 21, 10)
                         th = cv2.boxFilter(th,-1,(1,1),normalize=False)
-                        cv2.imwrite("/home/hit2/new_qingzhou_ws/src/vision_vel_pkg/scripts/word.jpg", th)
+                        cv2.imwrite("word.jpg", th)
                         time_start=time.time()
-                        text = pytesseract.image_to_string("/home/hit2/new_qingzhou_ws/src/vision_vel_pkg/scripts/word.jpg",lang='chi_sim',config='--psm 6')
+                        text = pytesseract.image_to_string("word.jpg",lang='chi_sim',config='--psm 6')
                         time_end=time.time()
                         print('Running time:{} seconds'.format(time_start - time_end))
                         print(text)
@@ -405,9 +430,6 @@ if __name__ == "__main__":
     thread1 = threading.Thread(name='t2',target= location)
     thread1.start()   #启动线程1
     get_vel()
-
-
-
 #!/usr/bin/env python3
 # coding=utf-8
 import cv2
@@ -418,7 +440,6 @@ import pytesseract
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist,TransformStamped
 from qingzhou_cloud.msg import trafficlight
-from queue import Queue
 import time
 import math
 import threading
@@ -475,32 +496,6 @@ def gstreamer_pipeline(
 
 
 
-class MovingAverageFilter:
-    def __init__(self, window_size):
-        self.window_size = window_size
-        self.data_queue = Queue(maxsize=window_size)
-        
-    def moving_average(self, data):
-        window = np.ones(self.window_size) / self.window_size
-        return np.convolve(data, window, mode='same')
-    
-    def filter(self, data):
-        self.data_queue.put(data)
-        
-        if self.data_queue.full():
-            window_data = np.array(list(self.data_queue.queue))
-            filtered_value = self.moving_average(window_data)
-            filtered_data = filtered_value[self.window_size//2]
-            
-            self.data_queue.get()
-        else:
-            filtered_data = data
-        
-        return filtered_data
-
-    def reset(self):
-        self.data_queue.queue.clear()
-    
 
 
 def warp(img):
@@ -543,9 +538,9 @@ def contour_select(contours,mask_green1,hsv):
         HullArea = cv2.contourArea(Hull)
         # 根据特定要求筛选ROI，例如大小、形状等
         x, y, w, h = cv2.boundingRect(contour)
-        #if 500 >= Area >10 and HullArea <= 400 and 0.8 <= w/h <= 1.5 and v >= 205:     # 场景有绿色干扰物时
-        if 1000 >= Area >5 and HullArea <= 500 and 0.5 <= w/h <= 5 :                    # 正常时
-        # if 1000 >= Area > 0 :                                                         # 场景很干净时
+        #if 500 >= Area >10 and HullArea <= 400 and 0.8 <= w/h <= 1.5 and v >= 205:    # 场景有绿色干扰物时
+        if 500 >= Area >10 and HullArea <= 500 and 0.5 <= w/h <= 2.5 :                 # 正常时
+        # if 1000 >= Area > 0 :                                                        # 场景很干净时
             roi_list.append(contour)
     if len(roi_list) != 0:
         flag = True
@@ -557,7 +552,7 @@ def contour_select(contours,mask_green1,hsv):
 
 
 def ocr(text):
-    if "航" in text and "天" in text or "天" in text or "夭" in text or "大" in text or "无" in text or "关" in text:
+    if "航" in text and "天" in text or "天" in text or "夭" in text or "大" in text:
         print("航天")
         wenzi = 1
     elif "三" in text or "院" in text or "二" in text or "阮" in text:
@@ -574,18 +569,20 @@ def ocr(text):
     return wenzi
 
 last_flag = False
+flag_01=1
 def get_vel():
     vel_msg = Twist()
     trafficlight_msg = trafficlight()
     daoche_msg = trafficlight()
     green = 0
     i = 0
-    limit = 35
-    stop = 80
+    limit = 20
+    stop = 30
     global daoche_pub
     global vel_pub  
     global trafficlight_pub
     global daoche_pub
+    global flag_01 
     global flag_s     #s弯标志位
     global flag_t     #红绿灯标志位
     global flag_z     #文字识别标志位
@@ -609,23 +606,23 @@ def get_vel():
 #######################################################################################################################################
                     if flag_s:
                         print(i)       
-                        cancel_pub =  rospy.Publisher("/move_base/cancel",GoalID,queue_size=10)
-                        empty_goal = GoalID()
-                        cancel_pub.publish(empty_goal)
-                        cancel_pub.publish(empty_goal)
-                        cancel_pub.publish(empty_goal)
+                        if flag_01==1:
+                            flag_01=0
+                            cancel_pub =  rospy.Publisher("/move_base/cancel",GoalID,queue_size=10)
+                            empty_goal = GoalID()
+                            cancel_pub.publish(empty_goal)
                         img = img[170:240, 0:320]  #(50,320)
-                        # pt2 = (80, 0)
-                        # pt1 = (240, 0)
-                        # pt3 = (0, 70)
-                        # pt4 = (320, 70)
-                        # # 将四个顶点坐标放入数组中
-                        # pts = np.array([pt1, pt2, pt3, pt4], np.int32)
-                        # # 创建一个掩膜
-                        # mask = np.zeros_like(img)
-                        # # 在掩膜上绘制填充的梯形
-                        # cv2.fillPoly(mask, [pts], 255)
-                        # img = cv2.bitwise_and(img,img,mask)
+                        pt2 = (80, 0)
+                        pt1 = (240, 0)
+                        pt3 = (0, 70)
+                        pt4 = (320, 70)
+                        # 将四个顶点坐标放入数组中
+                        pts = np.array([pt1, pt2, pt3, pt4], np.int32)
+                        # 创建一个掩膜
+                        mask = np.zeros_like(img)
+                        # 在掩膜上绘制填充的梯形
+                        cv2.fillPoly(mask, [pts], 255)
+                        img = cv2.bitwise_and(img,img,mask)
                         frame = cv2.GaussianBlur(img,(3,3),0)
                         #frame = cv2.bilateralFilter(img, d, sigma_color, sigma_space)
                         kernel = np.array([[-1, -2, -1],
@@ -648,7 +645,7 @@ def get_vel():
                             perimeter = cv2.arcLength(approx, True)
                             area = cv2.contourArea(approx)
                             x, y, w, h = cv2.boundingRect(approx)
-                            if 70 > perimeter > 25 and 400 > area > 37 and 0.5 < w / h < 2.5:
+                            if 70 > perimeter > 25 and 400 > area > 40 and 0.6 < w / h < 2.5:
                                 target_contours.append(approx)
                                 center_x = int(x + w / 2)
                                 center_y = int(y + h / 2)
@@ -671,47 +668,40 @@ def get_vel():
                             for index, x in enumerate(x_val):
                                 points.append([x, y_val[index]])
                             points = np.array(points, np.int32)
-                            vel_msg.angular.z = -pianyi*1.63 #上午1.60
+                            vel_msg.angular.z = -pianyi*1.62
                             if vel_msg.angular.z < 0:
                                 vel_msg.angular.z = vel_msg.angular.z-0.15
                             else:
                                 vel_msg.angular.z = vel_msg.angular.z
                             print(pianyi,vel_msg.angular.z)
                             vel_msg.linear.x = 1
-                            # vel_pub.publish(vel_msg)
+                            vel_pub.publish(vel_msg)
                             result = cv2.polylines(result, [points], False, (0, 0, 255), 2)
                         elif len(target_contours)==1:
                             vel_msg.linear.x = 1
-                            # vel_pub.publish(vel_msg)
+                            vel_pub.publish(vel_msg)
                             if i < 3:
                                 i = 0
                             result = img
                             print('一个')
                         else:
-                            if i < limit and i > 5:
-                                vel_msg.angular.z = -0.5
+                            if i < limit:
+                                vel_msg.angular.z = -0.45
                             i = i + 1
-                            # vel_pub.publish(vel_msg)
+                            vel_pub.publish(vel_msg)
                             result = frame
                         if limit < i < stop:
-                            vel_msg.linear.x = 0.5
-                            vel_msg.angular.z = 0
-                            # vel_pub.publish(vel_msg)
-                        if  i > stop:
+                            vel_msg.linear.x = 0.2
+                            vel_msg.angular.z = -1.0
+                            vel_pub.publish(vel_msg)
+                        if   i > stop:
                             flag_s = False
                             flag_z = True
-                            # 重置滤波器
-                            filter.reset()
-                            print("滤波器重置成功!")
+                            # flag_01=1
                             i=0
                             vel_msg.linear.x = 0
                             vel_msg.angular.z = 0
-                            # vel_pub.publish(vel_msg)
-                        # 创建移动平均滤波器实例
-                        window_size = 3
-                        filter = MovingAverageFilter(window_size)
-                        vel_msg.angular.z = filter.filter(vel_msg.angular.z)
-                        vel_pub.publish(vel_msg)
+                            vel_pub.publish(vel_msg)
                         image = result
 #####################################################红绿灯识别部分########################################################################           
 ##########################################################################################################################################
@@ -750,7 +740,7 @@ def get_vel():
                         else:
                             p = 0
                             t += 1
-                        if p >= 5:
+                        if p >= 7:
                             trafficlight_msg.trafficstatus = 2
                             trafficlight_pub.publish(trafficlight_msg)
                         else:
@@ -781,13 +771,13 @@ def get_vel():
             ####################################################################################################################
             ####################################################################################################################            
                     if flag_z == True and last_flag == False:
-                        img_word = img_ori[90:120, 100:220]
+                        img_word = img_ori[60:120, 100:220]
                         img_gray = cv2.cvtColor(img_word, cv2.COLOR_BGR2GRAY)
                         th = cv2.adaptiveThreshold(img_gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 21, 10)
                         th = cv2.boxFilter(th,-1,(1,1),normalize=False)
-                        cv2.imwrite("/home/hit2/new_qingzhou_ws/src/vision_vel_pkg/scripts/word.jpg", th)
+                        cv2.imwrite("word.jpg", th)
                         time_start=time.time()
-                        text = pytesseract.image_to_string("/home/hit2/new_qingzhou_ws/src/vision_vel_pkg/scripts/word.jpg",lang='chi_sim',config='--psm 6')
+                        text = pytesseract.image_to_string("word.jpg",lang='chi_sim',config='--psm 6')
                         time_end=time.time()
                         print('Running time:{} seconds'.format(time_start - time_end))
                         print(text)
@@ -797,6 +787,7 @@ def get_vel():
                             daoche_msg.trafficstatus = 1
                         else:
                             daoche_msg.trafficstatus = 0
+                        flag_01=1
                         daoche_pub.publish(daoche_msg)
                     last_flag = flag_z
                     _, send_data = cv2.imencode('.jpg', image,[cv2.IMWRITE_JPEG_QUALITY,50])
@@ -847,10 +838,10 @@ def receive_xy(tf_xy):
         yz_max=-0.28
 
         #判断是否检测红绿灯
-        if  xt_min <tf_xy.X < xt_max and yt_min< tf_xy.Y< yt_max :
-            flag_t=True
-        else:
-            flag_t=False
+        # if  xt_min <tf_xy.X < xt_max and yt_min< tf_xy.Y< yt_max :
+        #     flag_t=True
+        # else:
+        #     flag_t=False
         #判断是否检测s弯
         if  xs_min <tf_xy.X < xs_max and ys_min< tf_xy.Y< ys_max:
             flag_s=True
